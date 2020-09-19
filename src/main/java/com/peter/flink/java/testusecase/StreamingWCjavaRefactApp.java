@@ -1,4 +1,4 @@
-package com.peter.flink.java;
+package com.peter.flink.java.testusecase;
 
 import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.java.tuple.Tuple2;

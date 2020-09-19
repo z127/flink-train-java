@@ -16,7 +16,7 @@
  * limitations under the License.
  */
 
-package com.peter.flink.java;
+package com.peter.flink.java.testusecase;
 
 
 import org.apache.flink.api.common.functions.FlatMapFunction;

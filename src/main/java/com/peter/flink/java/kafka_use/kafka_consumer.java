@@ -13,6 +13,7 @@ public class kafka_consumer {
         Properties properties = new Properties();
         properties.setProperty("bootstrap.servers", "192.168.231.200:9092");
       properties.setProperty("group.id", "zqjtest");
+        properties.put("serializer.encoding", "gb18030");
         StreamExecutionEnvironment env = StreamExecutionEnvironment.getExecutionEnvironment();
 
         DataStream<String> stream = env.addSource(new FlinkKafkaConsumer<>("zqjtest", new SimpleStringSchema(), properties));
