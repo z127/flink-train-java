@@ -1,41 +1,36 @@
 package zhibo.flink;
 
 import connector.MysqlWriterZhiboData;
+import org.apache.commons.collections.IteratorUtils;
+import org.apache.flink.api.common.functions.FilterFunction;
+import org.apache.flink.api.common.functions.MapFunction;
+import org.apache.flink.api.common.serialization.SimpleStringSchema;
 import org.apache.flink.api.java.tuple.Tuple;
+import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.api.java.tuple.Tuple4;
-import org.apache.flink.api.java.tuple.Tuple5;
+import org.apache.flink.api.java.tuple.Tuple6;
 import org.apache.flink.streaming.api.TimeCharacteristic;
-import org.apache.flink.streaming.api.datastream.DataStreamSink;
+import org.apache.flink.streaming.api.datastream.DataStream;
+import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
 import org.apache.flink.streaming.api.functions.AssignerWithPeriodicWatermarks;
 import org.apache.flink.streaming.api.functions.windowing.WindowFunction;
 import org.apache.flink.streaming.api.watermark.Watermark;
 import org.apache.flink.streaming.api.windowing.assigners.TumblingEventTimeWindows;
 import org.apache.flink.streaming.api.windowing.time.Time;
 import org.apache.flink.streaming.api.windowing.windows.TimeWindow;
+import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
 import org.apache.flink.util.Collector;
 import org.slf4j.Logger;
-import  org.slf4j.LoggerFactory;
-import com.peter.flink.java.entity.House;
-import com.peter.flink.java.entity.ZhiboLog;
-import com.peter.flink.java.utils.Utils;
-import connector.MysqlWriter;
-import org.apache.flink.api.common.functions.FilterFunction;
-import org.apache.flink.api.common.functions.MapFunction;
-import org.apache.flink.api.common.serialization.SimpleStringSchema;
-import org.apache.flink.api.java.tuple.Tuple3;
-import org.apache.flink.streaming.api.datastream.DataStream;
-import org.apache.flink.streaming.api.environment.StreamExecutionEnvironment;
-import org.apache.flink.streaming.connectors.kafka.FlinkKafkaConsumer;
+import org.slf4j.LoggerFactory;
 import utils.DateFormatInstance;
 
 import javax.annotation.Nullable;
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.Iterator;
-import java.util.Map;
-import java.util.Properties;
+import java.util.*;
+import java.util.function.Function;
+import java.util.stream.Stream;
 
-public class LogZhiboFlinkAnalysis {
+public class LogZhiboFlinkWatermarkTest {
     //在生产上记录日志
     static Logger Logger_user= LoggerFactory.getLogger("LogZhiboFlinkAnalysis");
     public static void main(String[] args) throws Exception {
@@ -92,7 +87,7 @@ public class LogZhiboFlinkAnalysis {
         env.getConfig().setAutoWatermarkInterval(100);
         computed_stream.assignTimestampsAndWatermarks(new AssignerWithPeriodicWatermarks<Tuple3<Long, String, Long>>() {
 
-            private final long maxOutOfOrderness =5000;
+            private final long maxOutOfOrderness =10000;
 
             private long currentMaxTimestamp=0000L;
 
@@ -108,38 +103,43 @@ public class LogZhiboFlinkAnalysis {
             public long extractTimestamp(Tuple3<Long, String, Long> element, long previousElementTimestamp) {
                 long timestamp =element.f0;
                 currentMaxTimestamp=Math.max(previousElementTimestamp,currentMaxTimestamp);
-                System.err.println(element + ",EventTime:" + timestamp + ",watermark: " + (timestamp - maxOutOfOrderness)+",event_time "+ DateFormatInstance.getInstance().parse_long(timestamp )+", watermark: "+DateFormatInstance.getInstance().parse_long(timestamp ));
+                System.err.println(element + ",EventTime:" + timestamp + ",watermark: " + (timestamp - maxOutOfOrderness)+",event_time "+ DateFormatInstance.getInstance().parse_long(timestamp )+", watermark: "+DateFormatInstance.getInstance().parse_long(timestamp - maxOutOfOrderness ));
                 return timestamp;
             }
         }).keyBy(1).//此处是按照域名进行排序
                 window(TumblingEventTimeWindows.of(Time.seconds(10))).
-                apply(new WindowFunction<Tuple3<Long, String, Long>, Tuple3<String, String, Long>, Tuple, TimeWindow>() {
+                apply(new WindowFunction<Tuple3<Long, String, Long>, Tuple6<String, Integer,String,String,String,String>, Tuple, TimeWindow>() {
+
+
                     @Override
-                    public void apply(Tuple tuple, TimeWindow window, Iterable<Tuple3<Long, String, Long>> input, Collector<Tuple3<String, String, Long>> out) throws Exception {
+                    public void apply(Tuple tuple, TimeWindow window, Iterable<Tuple3<Long, String, Long>> input, Collector<Tuple6<String, Integer,String,String,String,String>> out) throws Exception {
                         String key=tuple.getField(0).toString();
                         long sum=0l;
                         String timestamp_date=null;
-                       Iterator list_zhibo_item=input.iterator();
-                       while (list_zhibo_item.hasNext())
-                       {
-                           Tuple3<Long, String, Long> list_item= (Tuple3<Long, String, Long>) list_zhibo_item.next();
-                           //traffic求和
-                           sum+=list_item.f2;
-                           if(timestamp_date ==null) {
-                               SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm");
-                               timestamp_date = sdf.format(new Date(list_item.f0));
-                               timestamp_date=timestamp_date+":00";
-                               System.out.println(timestamp_date);
-                           }
-                       }
+                       List<Tuple3<Long, String, Long>> list_zhibo_item= IteratorUtils.toList(input.iterator());
+                       int item_size=list_zhibo_item.size();
+                        Long max_window_time=list_zhibo_item.stream().max(new Comparator<Tuple3<Long, String, Long>>() {
+                            @Override
+                            public int compare(Tuple3<Long, String, Long> o1, Tuple3<Long, String, Long> o2) {
+                                return (int)(o1.f0-o2.f0);
+                            }
+                        }).get().f0;
 
-                        /**第一个参数：这一分钟的时间 2019-09-09 20：20
-                         * 第二个参数:域名
-                         * 第三个参数:traffic的和
-                         */
-                        out.collect(new Tuple3(timestamp_date,key,sum));
+                        Long min_window_time=list_zhibo_item.stream().min(new Comparator<Tuple3<Long, String, Long>>() {
+                            @Override
+                            public int compare(Tuple3<Long, String, Long> o1, Tuple3<Long, String, Long> o2) {
+                                return (int)(o1.f0-o2.f0);
+                            }
+                        }).get().f0;
+
+//                        String min_time_stamp=  DateFormatInstance.getInstance().parse_long(min_window_time );
+//                        String max_time_stamp=  DateFormatInstance.getInstance().parse_long(max_window_time );
+                        SimpleDateFormat format = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss.SSS");
+                        out.collect(new Tuple6<>(key,item_size,format.format(min_window_time),format.format(max_window_time),format.format(window.getStart()),format.format(window.getEnd())));
+
+
                     }
-                }).addSink(new MysqlWriterZhiboData()).setParallelism(1);
+                }).print();
         //统计level=E的数据
         env.execute("LogZhiboFlinkAnalysis");
     }

@@ -33,6 +33,7 @@ public class zhibologKafkaProducer {
         SimpleDateFormat ft = new SimpleDateFormat ("yyyy-MM-dd");
         KafkaProducer<String,String> producer=new KafkaProducer<String, String>(props);
         String topic="zhibolog_data";
+        //每3秒生产一条数据
         while (true)
         {
             StringBuilder builder=new StringBuilder();
@@ -45,7 +46,7 @@ public class zhibologKafkaProducer {
                     .append(getTraffic()).append("\t");
             System.out.println(builder.toString());
             producer.send(new ProducerRecord<String,String>(topic,builder.toString()));
-            Thread.sleep(3000);
+            Thread.sleep(2000);
         }
     }
 
@@ -55,11 +56,11 @@ public class zhibologKafkaProducer {
     }
 
     private static String getDomain() {
-        String[] domains= new String[]{"v1.netw2d.com",
-                "v2.netw2d.com",
-                "v3.netw2d.com",
-                "v4.netw2d.com",
-                "vkm.netw2d.com",
+        String[] domains= new String[]{"a.aaa.com",
+                "b.bbb.com",
+                "c.ccc.com",
+                "d.ddd.com",
+                "e.eee.com",
         };
         return domains[new Random().nextInt(domains.length)];
     }
